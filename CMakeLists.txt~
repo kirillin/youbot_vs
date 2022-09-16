@@ -1,0 +1,61 @@
+cmake_minimum_required(VERSION 2.8.3)
+project(youbot_vs)
+
+#include(CheckCXXCompilerFlag)
+#check_cxx_compiler_flag("-std=c++11" COMPILER_SUPPORTS_CXX11)
+#check_cxx_compiler_flag("-std=gnu++11" COMPILER_SUPPORTS_GNUXX11)
+
+#catkin_lint: ignore endblock_args indentation
+if(COMPILER_SUPPORTS_CXX11)
+  set(EXTRA_CXX_FLAGS "-std=c++11")
+elseif(COMPILER_SUPPORTS_GNUXX11)
+  set(EXTRA_CXX_FLAGS "-std=gnu++11")
+endif()
+
+find_package(catkin REQUIRED COMPONENTS
+  geometry_msgs
+  message_filters
+  resource_retriever
+  roscpp
+  sensor_msgs
+  std_msgs
+  visp_bridge
+  visp_tracker
+  tf
+)
+# ViSP cannot be found by Catkin.
+# see https://github.com/ros/catkin/issues/606
+find_package(VISP)
+
+find_package(Boost REQUIRED
+  COMPONENTS filesystem system signals regex date_time program_options thread)
+
+include_directories(
+  ${Boost_INCLUDE_DIRS}
+  ${VISP_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
+)
+
+catkin_package(
+   LIBRARIES auto_tracker
+
+   CATKIN_DEPENDS
+   geometry_msgs
+   message_filters
+   roscpp
+   sensor_msgs
+   std_msgs
+
+   DEPENDS
+   VISP
+   )
+
+add_library(youbot_vs
+)
+
+add_executable(${PROJECT_NAME}
+#  src/main.cpp
+)
+
+
+
