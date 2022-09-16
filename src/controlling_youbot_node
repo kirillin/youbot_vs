@@ -1,0 +1,188 @@
+#!/usr/bin/env python
+import rospy, threading
+import tf
+from math import pi, sin, cos
+
+from youbot_arm_kinematics.srv import IK
+from std_srvs.srv import Empty
+
+from sensor_msgs.msg import JointState
+
+from youbot_arm_kinematics.kinematics import Kinematics
+from youbot_arm_kinematics.dh_parameters import YouBotDHParameters
+
+from brics_actuator.msg import JointPositions, JointValue, JointVelocities
+
+N = 5   # qty joints
+
+
+class ControllingYoubotNode:
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.home_srv = rospy.Service('gohome', Empty, self.goHome)
+        self.candle_srv = rospy.Service('gocandle', Empty, self.goCandle)
+        self.start_srv = rospy.Service('gostart', Empty, self.goStart)
+        self.start_srv = rospy.Service('gofloor', Empty, self.goFloor)
+        self.start_srv = rospy.Service('govs', Empty, self.goVS)                
+
+        self.ds_srv = rospy.Service('switchDeal', Empty, self.switchDeal)
+
+        self.jp_pub = rospy.Publisher("arm_1/arm_controller/position_command", JointPositions, queue_size=10, latch=True)
+        self.js_sub = rospy.Subscriber("joint_states", JointState, self.callbackJointState)
+
+        self.ks = Kinematics(YouBotDHParameters.DH_A, YouBotDHParameters.DH_ALPHA, YouBotDHParameters.DH_D, YouBotDHParameters.DH_THETA)
+        
+        self.flag = False
+        self.log_file = open('youbot_furier_goal.txt', 'w')
+        self.log_file_mes = open('youbot_furier_mes.txt', 'w')
+        self.start_time = 0
+        
+        ## SOME STUFF
+        position = [3.04, 1.18, -2.63, 1.75, 2.89]
+        self.pos_template = JointPositions()
+        for i in range(N):
+            self.pos_template.positions.append(JointValue())
+            self.pos_template.positions[i].joint_uri = 'arm_joint_' + str(i+1)
+            self.pos_template.positions[i].unit = 'rad'
+            self.pos_template.positions[i].value = position[i]
+
+    def __del__(self):
+        self.log_file_goal.close()
+        self.log_file_mes.close()
+
+    def goStart(self, req):
+        position = [3.73, 2.00, -1.62, 3.14, 3.70]
+        position = [2.7652610727914366, 0.32324698817659625, -0.7665059046764147, 2.3893010324734956, 2.9234264970905017]
+        position = [3.075156024332147, 1.5390078395917457, -1.2918386071193908, 3.200464330006712, 2.9412608121936272]
+
+        jp_msg = JointPositions()
+        for i in range(N):
+            jp_msg.positions.append(JointValue())
+            jp_msg.positions[i].joint_uri = 'arm_joint_' + str(i+1)
+            jp_msg.positions[i].unit = 'rad'
+            jp_msg.positions[i].value = position[i]
+        self.jp_pub.publish(jp_msg)
+
+    def goFloor(self, req):
+        position = [3.73, 2.00, -1.62, 3.14, 3.70]
+        position = [2.7652610727914366, 0.32324698817659625, -0.7665059046764147, 2.3893010324734956, 2.9234264970905017]
+
+        jp_msg = JointPositions()
+        for i in range(N):
+            jp_msg.positions.append(JointValue())
+            jp_msg.positions[i].joint_uri = 'arm_joint_' + str(i+1)
+            jp_msg.positions[i].unit = 'rad'
+            jp_msg.positions[i].value = position[i]
+        self.jp_pub.publish(jp_msg)
+
+    def goVS(self, req):
+        position = [2.960941006801157, 0.1142049483237674, -0.7356510437278538, 1, 2.974159039488613]
+        position = [2.9608604531433724, 0.7720967406558069, -0.9123342145657439, 0.49396013504717834, 2.9750661190576078]
+        position = [1.3373820341575084, 0.31546826229797503, -0.7132829040342946, 0.7243583455717142, 2.910088248468923]
+        jp_msg = JointPositions()
+        for i in range(N):
+            jp_msg.positions.append(JointValue())
+            jp_msg.positions[i].joint_uri = 'arm_joint_' + str(i+1)
+            jp_msg.positions[i].unit = 'rad'
+            jp_msg.positions[i].value = position[i]
+        self.jp_pub.publish(jp_msg)
+
+
+    def goCandle(self, req):
+        position = [3.04, 1.18, -2.63, 2.1, 2.89]
+        jp_msg = JointPositions()
+        for i in range(N):
+            jp_msg.positions.append(JointValue())
+            jp_msg.positions[i].joint_uri = 'arm_joint_' + str(i+1)
+            jp_msg.positions[i].unit = 'rad'
+            jp_msg.positions[i].value = position[i]
+        self.jp_pub.publish(jp_msg)
+
+    def goHome(self, req):
+        """
+        [0, 0, 0, 0, 0.004]
+        """
+        jp_msg = JointPositions()
+        for i in range(N):
+            jp_msg.positions.append(JointValue())
+            jp_msg.positions[i].joint_uri = 'arm_joint_' + str(i+1)
+            jp_msg.positions[i].unit = 'rad'
+            jp_msg.positions[i].value = 0.025
+        jp_msg.positions[2].value = -0.016
+        jp_msg.positions[4].value = 0.12
+        self.jp_pub.publish(jp_msg)
+
+    def switchDeal(self, req):
+        self.flag = not self.flag
+        print("Switch deal is {}!".format(self.flag))
+        
+    def callbackJointState(self, js_msg):
+        time = js_msg.header.stamp.to_sec() - self.start_time
+
+        self.lock.acquire()
+        ca = js_msg.position
+        cv = js_msg.velocity
+        ct = js_msg.effort
+        if len(ct) == 0:
+            ct = [0]
+
+        if time < 10000:
+            self.log_file_mes.write(str(ca[0]) + ' ' + str(cv[0]) + ' ' + str(ct[0]) + ' ' + str(time) + '\n')
+
+        self.lock.release()
+
+    def doTrajectory(self, t):
+        nf = 5
+        T = 8.
+
+        w0 = 2. * pi / T
+        q0 = 5.7 / 2.
+        a = [5.5, 2., 3., 3., 2.];
+        b = [0., 5., 0., 1., 4.]
+
+        q = 0.
+        for k in range(nf):
+            q = q + q0 + a[k] * sin(k * w0 * t) + b[k] * cos(k * w0 * t)
+        q = 2.5 + 2 * sin(w0 * t) + 0.5 * cos(2 * w0 * t) + 0.3 * sin(4 * w0 * t) + 0.1 * cos(6 * w0 * t)
+        #q = 0.19 * q
+        
+        if 0.1 < q < 5.8:
+            self.log_file.write("{} {}\n".format(t, q))
+            self.pos_template.positions[0].value = q
+            self.jp_pub.publish(self.pos_template)
+
+    def loop(self):
+        rospy.init_node("controlling_youbot_node")
+
+        rate = rospy.Rate(30)
+
+        self.start_time = rospy.Time.now().to_sec()
+        start_time = rospy.Time.now().to_sec()
+        while not rospy.is_shutdown():
+
+            # if self.flag:
+            #     t = rospy.Time.now().to_sec() - start_time
+            #     self.doTrajectory(t)
+            # else:
+            #     start_time = rospy.Time.now().to_sec()
+
+            rate.sleep()
+    
+
+if __name__ == '__main__':
+    cyn = ControllingYoubotNode()
+    cyn.loop()
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
